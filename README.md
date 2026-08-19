@@ -1,4 +1,4 @@
-# mcp
+# Model Context Protocol
 
 A Model Context Protocol (MCP) server implemented **entirely from scratch
 in vanilla Python** — no `mcp` SDK, no framework, standard library only.
@@ -96,27 +96,3 @@ npx @modelcontextprotocol/inspector python server.py
 Restart Claude Desktop, then ask it to list your datasets or run an eval
 — it will discover and call these tools through this server.
 
-## Verification status
-
-- ✅ Protocol layer (transport, handshake, `tools/list`, `tools/call`,
-  every error path) — verified with a scripted subprocess test suite.
-- ✅ `harness.py` logic against the real harness code — verified: it
-  correctly loads the real `sample_eval.json` (4 samples) via the real
-  `DatasetLoader`, and error handling (unknown `run_id`, missing args)
-  works correctly.
-- ⚠️ **`run_eval` end-to-end (an actual model call through Gemini/OpenAI)
-  has not been run yet** — it needs your real API key and network access,
-  neither of which was available in the sandbox this was built in. Run
-  `python test_server.py` with `GEMINI_API_KEY` set in your own
-  environment to verify this last piece.
-- ⬜ Not yet tested against a real MCP client (Inspector or Claude
-  Desktop) — do this next, in your own environment.
-
-## Next steps
-
-- Run `test_server.py` locally with a real API key to verify `run_eval`
-  end-to-end
-- Test with MCP Inspector, then Claude Desktop
-- Push to your own git repo
-- Optional: add `resources`/`prompts` capabilities, or an HTTP/SSE
-  transport for non-local use
