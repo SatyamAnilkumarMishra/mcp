@@ -114,3 +114,151 @@ TOOLS = {
         "handler": _tool_list_run_history,
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Transport helpers
+# ---------------------------------------------------------------------------
+
+def send(message: dict) -> None:
+    sys.stdout.write(json.dumps(message) + "\n")
+    sys.stdout.flush()
+
+
+def result_response(id_, result) -> dict:
+    return {"jsonrpc": "2.0", "id": id_, "result": result}
+
+
+def error_response(id_, code: int, message: str, data=None) -> dict:
+    err = {"code": code, "message": message}
+    if data is not None:
+        err["data"] = data
+    return {"jsonrpc": "2.0", "id": id_, "error": err}
+
+
+# ---------------------------------------------------------------------------
+# MCP method handlers
+# ---------------------------------------------------------------------------
+
+_initialized = False
+
+
+def handle_initialize(id_, params: dict) -> dict:
+    result = {
+        "protocolVersion": PROTOCOL_VERSION,
+        "capabilities": {"tools": {}},
+        "serverInfo": SERVER_INFO,
+    }
+    return result_response(id_, result)
+
+
+def handle_initialized_notification(params: dict):
+    global _initialized
+    _initialized = True
+    return None
+
+
+def handle_tools_list(id_, params: dict) -> dict:
+    tools = []
+    for name, spec in TOOLS.items():
+        tools.append({
+            "name": name,
+            "description": spec["description"],
+            "inputSchema": spec["inputSchema"],
+        })
+    return result_response(id_, {"tools": tools})
+
+
+def handle_tools_call(id_, params: dict) -> dict:
+    name = params.get("name")
+    arguments = params.get("arguments", {}) or {}
+
+    if name not in TOOLS:
+        return error_response(id_, INVALID_PARAMS, f"Unknown tool: {name}")
+
+    handler = TOOLS[name]["handler"]
+    try:
+        output = handler(arguments)
+        return result_response(id_, {
+            "content": [{"type": "text", "text": json.dumps(output, default=str)}],
+            "isError": False,
+        })
+    except ValueError as e:
+        return result_response(id_, {
+            "content": [{"type": "text", "text": f"Tool error: {e}"}],
+            "isError": True,
+        })
+    except Exception:
+        return result_response(id_, {
+            "content": [{"type": "text", "text": f"Internal tool error:\n{traceback.format_exc()}"}],
+            "isError": True,
+        })
+
+
+METHOD_HANDLERS = {
+    "initialize": handle_initialize,
+    "tools/list": handle_tools_list,
+    "tools/call": handle_tools_call,
+}
+
+NOTIFICATION_HANDLERS = {
+    "notifications/initialized": handle_initialized_notification,
+}
+
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+def handle_message(msg: dict):
+    method = msg.get("method")
+
+    if method is None:
+        if "id" not in msg or msg.get("id") is None:
+            return None
+        return error_response(msg.get("id"), INVALID_REQUEST, "Missing 'method'")
+
+    if "id" not in msg:
+        fn = NOTIFICATION_HANDLERS.get(method)
+        if fn:
+            fn(msg.get("params", {}) or {})
+        return None
+
+    id_ = msg.get("id")
+    fn = METHOD_HANDLERS.get(method)
+    if fn is None:
+        return error_response(id_, METHOD_NOT_FOUND, f"Method not found: {method}")
+
+    try:
+        return fn(id_, msg.get("params", {}) or {})
+    except Exception:
+        return error_response(id_, INTERNAL_ERROR, "Internal error",
+                               data=traceback.format_exc())
+
+
+def main() -> None:
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            send(error_response(None, PARSE_ERROR, "Parse error: invalid JSON"))
+            continue
+
+        if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0":
+            bad_id = msg.get("id") if isinstance(msg, dict) else None
+            send(error_response(bad_id, INVALID_REQUEST,
+                                 "Invalid Request: not valid JSON-RPC 2.0"))
+            continue
+
+        response = handle_message(msg)
+        if response is not None:
+            send(response)
+
+
+if __name__ == "__main__":
+    main()
+
