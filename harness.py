@@ -83,3 +83,66 @@ def list_datasets() -> list[dict]:
         except Exception as e:
             out.append({"dataset": name, "error": str(e)})
     return out
+
+
+def run_eval(dataset: str, model: str, provider: str = "gemini",
+             system_prompt: str | None = None, max_concurrent: int | None = None) -> dict:
+    """Run an eval dataset against a model using the real harness pipeline
+    (DatasetLoader -> target -> EvaluationRunner -> evaluators -> metrics).
+    Returns a run_id plus the summary; full per-sample results are stored
+    and retrievable via get_results(run_id, detail=True)."""
+    dataset_path = _resolve_dataset_path(dataset)
+    samples = DatasetLoader.from_json(dataset_path)
+
+    target = get_model_target(provider, model)
+    evaluators = _build_evaluators()
+    concurrency = max_concurrent or settings.max_concurrent
+    runner = EvaluationRunner(target, max_concurrent=concurrency)
+
+    results = asyncio.run(runner.run(samples, evaluators, system_prompt))
+
+    run_id = f"run-{next(_run_counter)}"
+    summary = runner.metrics.summary()
+    _runs[run_id] = {
+        "run_id": run_id,
+        "dataset": os.path.basename(dataset_path),
+        "provider": provider,
+        "model": model,
+        "timestamp": time.time(),
+        "summary": summary,
+        "results": results,
+    }
+    return {"run_id": run_id, "summary": summary}
+
+
+def get_results(run_id: str, detail: bool = False) -> dict:
+    """Retrieve results for a previously completed eval run. Pass
+    detail=True to include full per-sample predictions/scores/reasoning."""
+    if run_id not in _runs:
+        raise ValueError(f"Unknown run_id: {run_id}")
+    run = _runs[run_id]
+    out = {
+        "run_id": run_id,
+        "dataset": run["dataset"],
+        "provider": run["provider"],
+        "model": run["model"],
+        "summary": run["summary"],
+    }
+    if detail:
+        out["results"] = run["results"]
+    return out
+
+
+def list_run_history() -> list[dict]:
+    """List all eval runs completed so far in this server session."""
+    return [
+        {
+            "run_id": r["run_id"],
+            "dataset": r["dataset"],
+            "provider": r["provider"],
+            "model": r["model"],
+            "pass_rate": r["summary"]["pass_rate"],
+        }
+        for r in _runs.values()
+    ]
+
