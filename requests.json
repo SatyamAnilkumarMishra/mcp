@@ -4,4 +4,4 @@
 {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
 {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_datasets", "arguments": {}}}
 {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "list_run_history", "arguments": {}}}
-'@
+'@ | Set-Content -Encoding utf8 requests.jsonl
