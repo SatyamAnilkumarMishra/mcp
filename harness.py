@@ -1,14 +1,3 @@
-"""
-Adapter between the MCP server and the real llm_eval_harness codebase
-(in ./llm_eval_harness/). This module imports the actual harness classes
-directly - DatasetLoader, get_model_target, EvaluationRunner, evaluators,
-MetricsTracker - and exposes plain sync functions the MCP server's tool
-handlers can call.
-
-The harness itself is async (EvaluationRunner.run is a coroutine); since
-the MCP server processes one stdio request at a time, each function here
-just wraps the async call with asyncio.run().
-"""
 
 """
 Adapter between the MCP server and the real llm_eval_harness codebase
