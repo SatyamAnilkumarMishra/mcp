@@ -1,12 +1,13 @@
 """
 MCP server built from scratch in vanilla Python - no `mcp` SDK.
 
-Implements:
+Implements full MCP Core Capabilities:
   - stdio JSON-RPC 2.0 transport (read/write loop)
   - the MCP `initialize` / `notifications/initialized` handshake
   - the `tools` capability: `tools/list` and `tools/call`
-  - wiring of tools/call into harness.py, which calls the real
-    llm_eval_harness codebase (./llm_eval_harness/)
+  - the `resources` capability: `resources/list` and `resources/read`
+  - the `prompts` capability: `prompts/list` and `prompts/get`
+  - wiring into harness.py and llm_eval_harness
 
 Run standalone for manual testing:
     python server.py
@@ -14,18 +15,23 @@ Then paste JSON-RPC messages, one per line, on stdin.
 
 Run the scripted test suite:
     python test_server.py
-
-Connect to a real client (Claude Desktop, MCP Inspector, etc.) over stdio.
 """
 
 import sys
 import json
 import traceback
+import os
+import glob
+import warnings
+
+# Suppress library deprecation warnings so stdio stdout is purely JSON-RPC
+warnings.filterwarnings("ignore")
+os.environ["GRPC_VERBOSITY"] = "NONE"
 
 import harness
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER_INFO = {"name": "eval-harness-mcp", "version": "0.2.0"}
+SERVER_INFO = {"name": "eval-harness-mcp", "version": "0.3.0"}
 
 # JSON-RPC standard error codes
 PARSE_ERROR = -32700
@@ -36,10 +42,7 @@ INTERNAL_ERROR = -32603
 
 
 # ---------------------------------------------------------------------------
-# Tool registry: maps a tool name to (description, input schema, handler fn)
-# These map directly onto harness.py's real functions, which in turn call
-# the actual llm_eval_harness codebase (DatasetLoader, EvaluationRunner,
-# get_model_target, evaluators, MetricsTracker).
+# 1. Tool Registry
 # ---------------------------------------------------------------------------
 
 def _tool_list_datasets(args: dict) -> list:
@@ -51,6 +54,9 @@ def _tool_run_eval(args: dict) -> dict:
     model = args.get("model")
     if not dataset or not model:
         raise ValueError("'dataset' and 'model' are required")
+    # Normalize deprecated alias names
+    if model in ("gemini-flash-latest", "gemini-flash", "gemini-2.5-flash"):
+        model = "gemini-3.6-flash"
     provider = args.get("provider", "gemini")
     system_prompt = args.get("system_prompt")
     max_concurrent = args.get("max_concurrent")
@@ -117,7 +123,38 @@ TOOLS = {
 
 
 # ---------------------------------------------------------------------------
-# Transport helpers
+# 2. Prompts Registry
+# ---------------------------------------------------------------------------
+
+PROMPTS = {
+    "evaluate_career_advisor": {
+        "description": "Prompt template to evaluate the Career Advisor response quality against domain criteria.",
+        "arguments": [
+            {"name": "user_query", "description": "User question submitted to Career Advisor", "required": True},
+            {"name": "advisor_response", "description": "Generated career advisor response", "required": True}
+        ],
+        "template": (
+            "Evaluate the following Career Advisor response for domain accuracy, actionable tone, formatting, and lack of boilerplate emojis:\n\n"
+            "USER QUERY:\n{user_query}\n\n"
+            "ADVISOR RESPONSE:\n{advisor_response}\n\n"
+            "Provide scoring against exactness, clarity, and structured table usage where appropriate."
+        )
+    },
+    "analyze_benchmark_report": {
+        "description": "Analyze an evaluation run summary and suggest model optimizations.",
+        "arguments": [
+            {"name": "run_id", "description": "Evaluation run identifier", "required": True}
+        ],
+        "template": (
+            "Analyze the evaluation benchmark results for run '{run_id}'. "
+            "Examine failure cases, pass rate, and identify systematic reasoning or extraction errors."
+        )
+    }
+}
+
+
+# ---------------------------------------------------------------------------
+# 3. Transport Helpers
 # ---------------------------------------------------------------------------
 
 def send(message: dict) -> None:
@@ -137,7 +174,7 @@ def error_response(id_, code: int, message: str, data=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# MCP method handlers
+# 4. MCP Method Handlers
 # ---------------------------------------------------------------------------
 
 _initialized = False
@@ -146,7 +183,11 @@ _initialized = False
 def handle_initialize(id_, params: dict) -> dict:
     result = {
         "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": {"tools": {}},
+        "capabilities": {
+            "tools": {},
+            "resources": {},
+            "prompts": {}
+        },
         "serverInfo": SERVER_INFO,
     }
     return result_response(id_, result)
@@ -195,10 +236,117 @@ def handle_tools_call(id_, params: dict) -> dict:
         })
 
 
+def handle_resources_list(id_, params: dict) -> dict:
+    """Lists available dataset and report resources."""
+    resources = []
+    dataset_dir = os.path.join(os.path.dirname(__file__), "llm_eval_harness", "dataset")
+    if os.path.exists(dataset_dir):
+        for f in sorted(glob.glob(os.path.join(dataset_dir, "*.json"))):
+            base = os.path.basename(f)
+            resources.append({
+                "uri": f"eval://dataset/{base}",
+                "name": f"Dataset: {base}",
+                "description": f"Evaluation dataset file {base}",
+                "mimeType": "application/json"
+            })
+
+    # Add dynamic completed runs as resources
+    for run in harness.list_run_history():
+        run_id = run["run_id"]
+        resources.append({
+            "uri": f"eval://reports/{run_id}",
+            "name": f"Run Report: {run_id}",
+            "description": f"Results for run {run_id} ({run['dataset']} on {run['model']})",
+            "mimeType": "application/json"
+        })
+
+    return result_response(id_, {"resources": resources})
+
+
+def handle_resources_read(id_, params: dict) -> dict:
+    """Reads content for a specific resource URI."""
+    uri = params.get("uri", "")
+    if not uri:
+        return error_response(id_, INVALID_PARAMS, "Missing 'uri' parameter")
+
+    if uri.startswith("eval://dataset/"):
+        dataset_name = uri.replace("eval://dataset/", "")
+        dataset_path = os.path.join(os.path.dirname(__file__), "llm_eval_harness", "dataset", dataset_name)
+        if not os.path.exists(dataset_path):
+            return error_response(id_, INVALID_PARAMS, f"Dataset not found: {dataset_name}")
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return result_response(id_, {
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": content
+            }]
+        })
+
+    if uri.startswith("eval://reports/"):
+        run_id = uri.replace("eval://reports/", "")
+        try:
+            results = harness.get_results(run_id, detail=True)
+            return result_response(id_, {
+                "contents": [{
+                    "uri": uri,
+                    "mimeType": "application/json",
+                    "text": json.dumps(results, indent=2)
+                }]
+            })
+        except ValueError as e:
+            return error_response(id_, INVALID_PARAMS, str(e))
+
+    return error_response(id_, INVALID_PARAMS, f"Unsupported resource URI: {uri}")
+
+
+def handle_prompts_list(id_, params: dict) -> dict:
+    """Lists prompt templates."""
+    prompts = []
+    for name, spec in PROMPTS.items():
+        prompts.append({
+            "name": name,
+            "description": spec["description"],
+            "arguments": spec.get("arguments", [])
+        })
+    return result_response(id_, {"prompts": prompts})
+
+
+def handle_prompts_get(id_, params: dict) -> dict:
+    """Renders a prompt template."""
+    name = params.get("name")
+    args = params.get("arguments", {}) or {}
+
+    if not name or name not in PROMPTS:
+        return error_response(id_, INVALID_PARAMS, f"Prompt not found: {name}")
+
+    spec = PROMPTS[name]
+    template = spec["template"]
+    rendered = template.format(**{
+        k["name"]: args.get(k["name"], f"<{k['name']}>")
+        for k in spec.get("arguments", [])
+    })
+
+    return result_response(id_, {
+        "description": spec["description"],
+        "messages": [
+            {
+                "role": "user",
+                "content": {"type": "text", "text": rendered}
+            }
+        ]
+    })
+
+
 METHOD_HANDLERS = {
     "initialize": handle_initialize,
     "tools/list": handle_tools_list,
     "tools/call": handle_tools_call,
+    "resources/list": handle_resources_list,
+    "resources/read": handle_resources_read,
+    "prompts/list": handle_prompts_list,
+    "prompts/get": handle_prompts_get,
 }
 
 NOTIFICATION_HANDLERS = {
@@ -207,7 +355,7 @@ NOTIFICATION_HANDLERS = {
 
 
 # ---------------------------------------------------------------------------
-# Dispatch
+# 5. Dispatch
 # ---------------------------------------------------------------------------
 
 def handle_message(msg: dict):
@@ -233,7 +381,7 @@ def handle_message(msg: dict):
         return fn(id_, msg.get("params", {}) or {})
     except Exception:
         return error_response(id_, INTERNAL_ERROR, "Internal error",
-                               data=traceback.format_exc())
+                              data=traceback.format_exc())
 
 
 def main() -> None:
