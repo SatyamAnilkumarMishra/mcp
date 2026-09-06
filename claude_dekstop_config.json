@@ -1,0 +1,72 @@
+{
+  "_comment": "Command to get the content of the Claude config: Get-Content $env:APPDATA\\Claude\\claude_desktop_config.json",
+  "mcpServers": {
+    "eval-harness": {
+      "command": "C:\\Python313\\python.exe",
+      "args": [
+        "D:\\mcp\\server.py"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "GEMINI_API_KEY": "API KEY HERE",
+        "GROQ_API_KEY": "API KEY HERE"
+      }
+    }
+  },
+  "coworkUserFilesPath": "CLAUDE WORKING DIRECTORY",
+  "preferences": {
+    "coworkBrowserToolsEnabled": false,
+    "coworkPreferredBrowser": "built_in",
+    "launchPreviewPersistedWorkspaces": [],
+    "launchPreviewSessionScopedSessions": [],
+    "coworkScheduledTasksEnabled": false,
+    "coworkHipaaRestricted": false,
+    "orgWorkAcrossAppsDisabled": true,
+    "ccdScheduledTasksEnabled": false,
+    "hybridDetectLatched": true,
+    "earlyWindowShowLatched": true,
+    "sidebarMode": "chat",
+    "bypassPermissionsGateByAccount": {
+      "926e25b9-1864-41ac-b592-93121c608197": false,
+      "855ae0a0-1f0f-401d-ac1d-9315f07ee01e": false,
+      "8cbe6e5f-268b-47e7-8373-1bb7eed35e29": false,
+      "d253b94c-0cb9-44da-a705-3c53858374e6": false,
+      "e7e689b7-3c40-432d-ae35-c31b8085d632": false
+    },
+    "coworkWebSearchEnabled": true,
+    "coworkModelAutoFallbackByAccount": {
+      "926e25b9-1864-41ac-b592-93121c608197": true,
+      "855ae0a0-1f0f-401d-ac1d-9315f07ee01e": true,
+      "8cbe6e5f-268b-47e7-8373-1bb7eed35e29": true,
+      "d253b94c-0cb9-44da-a705-3c53858374e6": true,
+      "e7e689b7-3c40-432d-ae35-c31b8085d632": true
+    },
+    "remoteToolsDeviceName": "imposter",
+    "epitaxyPrefs": {
+      "starred-local-code-sessions": [],
+      "starred-cowork-spaces": [],
+      "homeProjectsPinnedOrder": [],
+      "dframe-group-scopes": {},
+      "dframe-local-slice": {
+        "pinnedOrder": []
+        
+      },
+      "desktop-frame.paneStore.v1": {
+        "state": {
+          "extraPanesByMode": {},
+          "colWeightsByMode": {},
+          "rowSplit": 0.5,
+          "draftNonce": 0
+        },
+        "version": 4
+      },
+      "ccd-sessions-filter": {
+        "state": {
+          "selectedProjects": []
+        },
+        "version": 0
+      }
+    },
+    "coworkLegacyRootGrantsPruned": true
+  }
+}
