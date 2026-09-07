@@ -1,0 +1,30 @@
+[
+  {
+    "id": "easy_01",
+    "question": "What is the capital of France? Return ONLY the city name.",
+    "expected_answer": "Paris",
+    "evaluator": "exact_match",
+    "metadata": { "difficulty": "easy", "system_prompt": "You are a concise factual assistant." }
+  },
+  {
+    "id": "moderate_01",
+    "question": "If a train travels at 60 mph for 2.5 hours, how many miles does it cover? Return ONLY the calculated number.",
+    "expected_answer": "150",
+    "evaluator": "exact_match",
+    "metadata": { "difficulty": "moderate", "system_prompt": "You are a math problem solver." }
+  },
+  {
+    "id": "hard_01",
+    "question": "Find the bug in this Python code snippet and fix it: `def add_element(elem, lst=[]): lst.append(elem); return lst`.",
+    "expected_answer": "def add_element(elem, lst=None):\n    if lst is None:\n        lst = []\n    lst.append(elem)\n    return lst",
+    "evaluator": "llm_judge",
+    "metadata": { "difficulty": "hard", "system_prompt": "You are a senior Python code reviewer." }
+  },
+  {
+    "id": "advanced_01",
+    "question": "Design a high-level software architecture for a distributed rate limiter supporting 100,000 requests per second. Include components, caching layer, storage, and handling race conditions in 4 bullet points.",
+    "expected_answer": "1. Edge API Gateway with Redis cache cluster running Sliding Window counter algorithm.\n2. Use Redis Lua scripts to execute atomic operations and avoid race conditions.\n3. Asynchronous fallback logger to persistent DB (Cassandra/DynamoDB) for audit logs.\n4. Distributed lock or local token bucket algorithm for graceful degraded operation during cache partition.",
+    "evaluator": "llm_judge",
+    "metadata": { "difficulty": "advanced", "system_prompt": "You are a principal systems architect." }
+  }
+]
