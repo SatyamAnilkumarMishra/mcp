@@ -82,3 +82,51 @@ async def main():
         action="store_true",
         help="Run comparison mode (requires editing compare configs in code)",
     )
+
+    args = parser.parse_args()
+    evaluators = build_evaluators()
+
+    if args.compare:
+        compare_configs = [
+            {
+                "provider": "gemini",
+                "model": "gemini-flash-latest",
+                "name": "gemini_flash_latest",
+                "system_prompt": args.system_prompt,
+                "kwargs": {"api_key": settings.gemini_api_key},
+                "max_concurrent": 1,
+            },
+            {
+                "provider": "openai-compatible",
+                "model": "openai/gpt-oss-20b",
+                "name": "groq_gpt_oss_20b",
+                "system_prompt": args.system_prompt,
+                "kwargs": {"api_key": settings.groq_api_key, "base_url": settings.groq_base_url},
+                "max_concurrent": 1,
+                
+            },
+            # Add more models here manually or load from a JSON config
+        ]
+        comp = ModelComparison(args.dataset, evaluators)
+        await comp.compare(compare_configs)
+        return
+
+    dataset = DatasetLoader.from_json(args.dataset)
+    target = get_model_target(args.provider, args.model)
+    runner = EvaluationRunner(target, max_concurrent=args.max_concurrent)
+
+    results = await runner.run(dataset, evaluators, args.system_prompt)
+
+    reporter = Reporter()
+    reporter.print_table(results, runner.metrics)
+
+    csv_path = reporter.to_csv(results, args.output_csv)
+    jsonl_path = runner.recorder.flush()
+
+    print(f"CSV Report: {csv_path}")
+    print(f"JSONL Raw:  {jsonl_path}")
+    print(f"Summary:\n{json.dumps(runner.metrics.summary(), indent=2)}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
